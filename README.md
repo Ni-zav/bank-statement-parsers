@@ -17,6 +17,7 @@ A Python tool to extract and parse bank statement files from multiple Indonesian
 - **Automatic Bank Detection**: Recognizes default bank download filenames and custom naming patterns
 - **Recursive File Search**: Finds all statement files in folders and subfolders automatically
 - **Bank-Specific Parsing**: Uses dedicated parsers for each bank's unique statement format
+- **Password-Protected Files**: Automatically decrypts password-protected Mandiri Excel files
 - **Transaction Extraction**: Extracts date, description, amounts, balances, and reference numbers
 - **Standardized Output**: Exports data to CSV with consistent columns across all banks
 - **Account Information**: Automatically extracts account owner name and account number
@@ -31,6 +32,7 @@ A Python tool to extract and parse bank statement files from multiple Indonesian
 - pandas
 - pdfplumber
 - openpyxl
+- msoffcrypto-tool (for password-protected Mandiri files)
 
 ### Setup
 
@@ -80,6 +82,16 @@ Or use the long form:
 ```bash
 python process_statements.py /path/to/statements bca --output /path/to/output
 ```
+
+### Password-Protected Mandiri Files
+
+For password-protected Mandiri Excel files, provide the password with `-p` flag:
+
+```bash
+python process_statements.py /path/to/statements mandiri -p YOUR_PASSWORD -o /path/to/output
+```
+
+Alternatively, place a `password.txt` file in the Mandiri statements folder with the password on the first line - it will be used automatically.
 
 ## Input File Requirements
 
