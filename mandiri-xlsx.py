@@ -2,6 +2,7 @@ import pandas as pd
 import re
 from datetime import datetime
 from typing import List
+from pathlib import Path
 from base import BaseParser, Transaction
 import warnings
 
@@ -17,6 +18,8 @@ class MandiriXLSXParser(BaseParser):
         transactions = []
         
         try:
+            df = None
+            
             # Handle password-protected Excel files
             if self.password:
                 import io
@@ -32,17 +35,68 @@ class MandiriXLSXParser(BaseParser):
                         office_file.decrypt(decrypted)
                         decrypted.seek(0)
                         
-                        # Read the decrypted content
-                        df = pd.read_excel(decrypted, sheet_name=0, header=None)
+                        # Read the decrypted content - use openpyxl for .xlsx files
+                        if self.file_path.lower().endswith('.xlsx'):
+                            try:
+                                df = pd.read_excel(decrypted, sheet_name=0, header=None, engine='openpyxl')
+                            except Exception as e:
+                                # Fallback to xlrd for older formats
+                                try:
+                                    decrypted.seek(0)
+                                    df = pd.read_excel(decrypted, sheet_name=0, header=None, engine='xlrd')
+                                except Exception as xlrd_err:
+                                    print(f"Warning: Could not read {Path(self.file_path).name} with either openpyxl or xlrd")
+                        else:
+                            df = pd.read_excel(decrypted, sheet_name=0, header=None)
                 except Exception as e:
                     print(f"Error decrypting {self.file_path}: {e}")
                     print("  Trying without password...")
-                    df = pd.read_excel(self.file_path, sheet_name=0, header=None)
+                    # Use openpyxl for .xlsx files, with fallback to xlrd
+                    if self.file_path.lower().endswith('.xlsx'):
+                        try:
+                            df = pd.read_excel(self.file_path, sheet_name=0, header=None, engine='openpyxl')
+                        except Exception:
+                            try:
+                                df = pd.read_excel(self.file_path, sheet_name=0, header=None, engine='xlrd')
+                            except Exception:
+                                print(f"Warning: Could not read {Path(self.file_path).name} with either openpyxl or xlrd")
+                    else:
+                        try:
+                            df = pd.read_excel(self.file_path, sheet_name=0, header=None)
+                        except Exception:
+                            print(f"Warning: Could not read {Path(self.file_path).name}")
             else:
-                # Read the Excel file without password
-                df = pd.read_excel(self.file_path, sheet_name=0, header=None)
+                # Read the Excel file without password - use openpyxl for .xlsx files
+                if self.file_path.lower().endswith('.xlsx'):
+                    try:
+                        df = pd.read_excel(self.file_path, sheet_name=0, header=None, engine='openpyxl')
+                    except Exception as e:
+                        # Try xlrd as fallback
+                        try:
+                            df = pd.read_excel(self.file_path, sheet_name=0, header=None, engine='xlrd')
+                        except Exception:
+                            # Try openpyxl with data_only=False (for cached values)
+                            try:
+                                from openpyxl import load_workbook
+                                wb = load_workbook(self.file_path, data_only=True)
+                                ws = wb.active
+                                data = []
+                                for row in ws.iter_rows(values_only=True):
+                                    data.append(row)
+                                df = pd.DataFrame(data)
+                            except Exception:
+                                print(f"Warning: Could not read {Path(self.file_path).name} with any method")
+                else:
+                    try:
+                        df = pd.read_excel(self.file_path, sheet_name=0, header=None)
+                    except Exception:
+                        print(f"Warning: Could not read {Path(self.file_path).name}")
             
-            # Find header row
+            # If we couldn't read the file with any method, return empty transaction list
+            if df is None or df.empty:
+                return transactions
+            
+            # Find header row - look for 'tanggal' or 'date' columns
             header_row_idx = None
             for idx, row in df.iterrows():
                 # Explicitly convert to string to avoid float issues
@@ -66,16 +120,32 @@ class MandiriXLSXParser(BaseParser):
                         if clean_val and clean_val.lower() not in ['nan', 'unknown', '']:
                              self.account_owner = clean_val
 
-                if any('tanggal' in s for s in row_str) and (any('uraian' in s for s in row_str) or any('keterangan' in s for s in row_str)):
-                    header_row_idx = idx
-                    break
+                # Look for tanggal/date with more flexible conditions
+                # Just need tanggal with any description column
+                if any('tanggal' in s or 'date' in s for s in row_str):
+                    has_desc = any('uraian' in s or 'keterangan' in s or 'description' in s or 'remarks' in s for s in row_str)
+                    has_amount = any('nominal' in s or 'amount' in s or 'debit' in s or 'credit' in s for s in row_str)
+                    
+                    # Accept if we have tanggal + (description OR amount)
+                    if has_desc or has_amount:
+                        header_row_idx = idx
+                        break
             
             if header_row_idx is None:
-                # Try finding just 'tanggal' and assuming it's the header
+                # Try finding just 'tanggal' alone and assuming it's the header
                 for idx, row in df.iterrows():
-                     if 'tanggal' in str(row[0]).lower():
+                     if 'tanggal' in str(row[0]).lower() or 'date' in str(row[0]).lower():
                          header_row_idx = idx
                          break
+
+            if header_row_idx is None:
+                # Last resort: look for any row that might be a header
+                # by checking if it has multiple text values
+                for idx, row in df.iterrows():
+                    non_empty = [str(x) for x in row.tolist() if str(x).strip() and str(x).lower() != 'nan']
+                    if len(non_empty) >= 3:
+                        header_row_idx = idx
+                        break
 
             if header_row_idx is None:
                 print(f"Could not find header row in {self.file_path}")

@@ -5,9 +5,26 @@ from typing import List
 from base import BaseParser, Transaction
 
 class MandiriPDFParser(BaseParser):
-    def __init__(self, file_path: str, account_owner: str, password: str = None):
-        super().__init__(file_path, account_owner)
+    def __init__(self, file_path: str, account_owner: str = None, password: str = None):
+        super().__init__(file_path, account_owner or "Unknown")
         self.password = password
+        self._extract_header_info()
+    
+    def _extract_header_info(self):
+        """Extract account owner and number from PDF header"""
+        try:
+            with pdfplumber.open(self.file_path, password=self.password) as pdf:
+                first_page_text = pdf.pages[0].extract_text()
+                if first_page_text:
+                    name_match = re.search(r'Nama/Name\s*:\s*([A-Z\s]+?)(?:\s+Periode|$)', first_page_text)
+                    if name_match:
+                        self.account_owner = name_match.group(1).strip()
+                    
+                    acct_match = re.search(r'Nomor\s+Rekening.*?:\s*(\d+)', first_page_text, re.IGNORECASE)
+                    if acct_match:
+                        self.account_number = acct_match.group(1).strip()
+        except Exception as e:
+            pass  # Use defaults if extraction fails
     
     def _parse_amount(self, amount_str: str) -> float:
         if not amount_str:
@@ -27,11 +44,6 @@ class MandiriPDFParser(BaseParser):
         
         try:
             with pdfplumber.open(self.file_path, password=self.password) as pdf:
-                first_page_text = pdf.pages[0].extract_text()
-                if first_page_text:
-                    name_match = re.search(r'Nama/Name\s*:\s*([A-Z\s]+?)(?:\s+Periode|$)', first_page_text)
-                    if name_match:
-                        self.account_owner = name_match.group(1).strip()
                 
                 for page in pdf.pages:
                     text = page.extract_text()

@@ -32,6 +32,16 @@ def process_file(file_path: Path, output_dir: Path, password: str = None, output
     parser = None
     account_owner = "Unknown"
     
+    # Auto-detect password from password.txt in same directory
+    if password is None:
+        password_file = file_path.parent / "password.txt"
+        if password_file.exists():
+            try:
+                with open(password_file, 'r') as f:
+                    password = f.read().strip()
+            except Exception as e:
+                print(f"Warning: Could not read password file: {e}")
+    
     print(f"Inspecting {filename}...")
 
     # Enhanced parser selection using same logic as file finding
@@ -106,7 +116,12 @@ def process_file(file_path: Path, output_dir: Path, password: str = None, output
                 end_str = max_date.strftime("%d%m%Y")
                 output_filename = f"{bank_name}-[{owner_safe}]-{acct_num}-{start_str}-{end_str}.csv"
             
+            # Sanitize filename to remove any path separators
+            output_filename = output_filename.replace('\\', '_').replace('/', '_')
             output_path = output_dir / output_filename
+            
+            # Ensure output directory exists
+            output_path.parent.mkdir(parents=True, exist_ok=True)
             
             data = [t.to_dict(output_format) for t in transactions]
             df = pd.DataFrame(data)
@@ -312,6 +327,7 @@ def main():
              'Presets: dd/mm/yyyy, ddmmyyyy, mmyyyy, mmmm, mm, yyyymmdd '
              'Or use strftime format (e.g., %%d/%%m/%%Y, %%Y-%%m-%%d, %%b-%%Y). '
              'Must contain month (%%m, %%B, %%b) and year (%%Y, %%y) components. '
+             'Note: Filenames always use safe format (%%d%%m%%Y) to avoid path separator issues. '
              '(default: %%d/%%m/%%Y)'
     )
     

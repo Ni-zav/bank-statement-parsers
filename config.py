@@ -186,28 +186,40 @@ class OutputFormat:
             end_date: Statement end date
             
         Returns:
-            Formatted filename (without path)
+            Formatted filename (without path) - always uses safe date format (%d%m%Y)
+            to avoid path separator issues on Windows/Unix.
         """
-        # Sanitize owner name
+        # Sanitize owner name - remove any path separator characters
         owner_safe = "".join(
             [c for c in owner_name if c.isalpha() or c.isspace() or c in ["."]]
         ).strip()
+        
+        # ALWAYS use safe format for filename dates (no forward/back slashes)
+        # This prevents issues when dates are embedded in filenames
+        safe_date_format = "%d%m%Y"  # Format: DDMMYYYY (e.g., 15012025)
+        try:
+            start_date_str = start_date.strftime(safe_date_format)
+            end_date_str = end_date.strftime(safe_date_format)
+        except Exception:
+            # Fallback: ISO format without separators
+            start_date_str = start_date.isoformat().replace("-", "")
+            end_date_str = end_date.isoformat().replace("-", "")
         
         format_dict = {
             "bank": bank_name,
             "owner": owner_safe,
             "account": account_number,
             "currency": self.currency,
-            "start_date": self.format_date(start_date),
-            "end_date": self.format_date(end_date),
+            "start_date": start_date_str,
+            "end_date": end_date_str,
         }
         
         try:
             return self.filename_format.format(**format_dict)
         except KeyError as e:
             print(f"Warning: Unknown placeholder in filename format: {e}")
-            # Fallback to default format
-            return f"{bank_name}-[{owner_safe}]-{account_number}-{self.format_date(start_date)}-{self.format_date(end_date)}.csv"
+            # Fallback to default format with safe dates
+            return f"{bank_name}-[{owner_safe}]-{account_number}-{start_date_str}-{end_date_str}.csv"
 
 
 def from_args(args) -> OutputFormat:
