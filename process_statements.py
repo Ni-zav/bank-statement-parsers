@@ -4,9 +4,17 @@ import traceback
 import argparse
 from pathlib import Path
 import pandas as pd
-from bca import BCAParser
-from mandiri import MandiriParser
-from cimb import CIMBParser
+# Import with underscore names (Python module names)
+import importlib
+bca_pdf = importlib.import_module('bca-pdf')
+mandiri_xlsx = importlib.import_module('mandiri-xlsx')
+mandiri_pdf = importlib.import_module('mandiri-pdf')
+cimb_pdf = importlib.import_module('cimb-pdf')
+
+BCAPDFParser = bca_pdf.BCAPDFParser
+MandiriXLSXParser = mandiri_xlsx.MandiriXLSXParser
+MandiriPDFParser = mandiri_pdf.MandiriPDFParser
+CIMBPDFParser = cimb_pdf.CIMBPDFParser
 
 def process_file(file_path: Path, output_dir: Path, password: str = None):
     """
@@ -29,18 +37,23 @@ def process_file(file_path: Path, output_dir: Path, password: str = None):
         is_bca = 'bca' in filename or any(month in filename for month in ['_jul_', '_agust_', '_sept_', '_okt_', '_nov_', '_des_', '_jan_', '_feb_', '_mar_', '_apr_', '_mei_', '_jun_'])
         # Check for CIMB (CASA or cimb keyword)
         is_cimb = 'cimb' in filename or 'casa' in filename
+        # Check for Mandiri PDF
+        is_mandiri_pdf = 'e-statement' in filename or ('mandiri' in filename and '.pdf' in filename)
         
-        if is_bca and not is_cimb:
-            parser = BCAParser(str(file_path), account_owner)
-            print(f"Selected BCAParser for {filename}")
+        if is_mandiri_pdf and not is_cimb:
+            parser = MandiriPDFParser(str(file_path), account_owner, password=password)
+            print(f"Selected MandiriPDFParser for {filename}")
+        elif is_bca and not is_cimb and not is_mandiri_pdf:
+            parser = BCAPDFParser(str(file_path), account_owner)
+            print(f"Selected BCAPDFParser for {filename}")
         elif is_cimb:
-            parser = CIMBParser(str(file_path), account_owner)
-            print(f"Selected CIMBParser for {filename}")
+            parser = CIMBPDFParser(str(file_path), account_owner)
+            print(f"Selected CIMBPDFParser for {filename}")
     elif filename.endswith('.xlsx') or filename.endswith('.xls'):
         # Check for Mandiri (e-statement or mandiri keyword)
         if 'e-statement' in filename or 'mandiri' in filename:
-            parser = MandiriParser(str(file_path), account_owner, password=password)
-            print(f"Selected MandiriParser for {filename}")
+            parser = MandiriXLSXParser(str(file_path), account_owner, password=password)
+            print(f"Selected MandiriXLSXParser for {filename}")
     
     if not parser:
         print(f"No parser found for {filename}")
@@ -72,11 +85,11 @@ def process_file(file_path: Path, output_dir: Path, password: str = None):
             owner_safe = "".join([c for c in owner_name if c.isalpha() or c.isspace() or c in ['.']]).strip()
             
             bank_name = ""
-            if isinstance(parser, BCAParser):
+            if isinstance(parser, BCAPDFParser):
                 bank_name = "BCA"
-            elif isinstance(parser, MandiriParser):
+            elif isinstance(parser, (MandiriXLSXParser, MandiriPDFParser)):
                 bank_name = "Mandiri"
-            elif isinstance(parser, CIMBParser):
+            elif isinstance(parser, CIMBPDFParser):
                 bank_name = "CIMB"
             else:
                 bank_name = "Bank"
@@ -137,9 +150,9 @@ def find_bank_files(folder_path: Path, bank_name: str, password: str = None) -> 
             'keywords': ['bca', 'bank central', 'mutasi rekening', 'saldo', 'rekening'],
         },
         'mandiri': {
-            'extensions': ('.xlsx', '.xls'),
+            'extensions': ('.xlsx', '.xls', '.pdf'),
             'filename_patterns': ['mandiri', 'e-statement'],  # Mandiri default is e-Statement
-            'keywords': ['mandiri', 'bank mandiri', 'laporan transaksi', 'tanggal', 'uraian'],
+            'keywords': ['mandiri', 'bank mandiri', 'laporan transaksi', 'tanggal', 'uraian', 'nominasi', 'saldo'],
         },
         'cimb': {
             'extensions': ('.pdf',),
@@ -180,15 +193,31 @@ def find_bank_files(folder_path: Path, bank_name: str, password: str = None) -> 
                     # Quick check: read first page of PDF
                     try:
                         import pdfplumber
-                        with pdfplumber.open(file_path) as pdf:
-                            first_page = pdf.pages[0].extract_text() if pdf.pages else ""
-                            content_lower = first_page.lower() if first_page else ""
-                            # Check if any keyword is found in first page
-                            is_valid = any(kw in content_lower for kw in keywords)
-                            
-                            # For CASA files, trust the filename pattern even if keywords not found
-                            if bank_name == 'cimb' and 'casa' in file_lower and not is_valid:
-                                is_valid = True
+                        # Try opening with password if provided (for Mandiri PDFs)
+                        try:
+                            with pdfplumber.open(file_path, password=password) as pdf:
+                                first_page = pdf.pages[0].extract_text() if pdf.pages else ""
+                                content_lower = first_page.lower() if first_page else ""
+                                # Check if any keyword is found in first page
+                                is_valid = any(kw in content_lower for kw in keywords)
+                                
+                                # For CASA files, trust the filename pattern even if keywords not found
+                                if bank_name == 'cimb' and 'casa' in file_lower and not is_valid:
+                                    is_valid = True
+                        except Exception as pwd_error:
+                            # If password didn't work, try without password
+                            try:
+                                with pdfplumber.open(file_path) as pdf:
+                                    first_page = pdf.pages[0].extract_text() if pdf.pages else ""
+                                    content_lower = first_page.lower() if first_page else ""
+                                    is_valid = any(kw in content_lower for kw in keywords)
+                                    
+                                    if bank_name == 'cimb' and 'casa' in file_lower and not is_valid:
+                                        is_valid = True
+                            except:
+                                # If both fail, accept based on filename pattern for Mandiri PDFs
+                                if bank_name == 'mandiri' and 'e-statement' in file_lower:
+                                    is_valid = True
                     except Exception as e:
                         print(f"  Warning: Could not read PDF {file_path} - {type(e).__name__}")
                         continue
@@ -212,12 +241,12 @@ def find_bank_files(folder_path: Path, bank_name: str, password: str = None) -> 
                 
                 if is_valid:
                     matching_files.append(file_path)
-                    print(f"  ✓ Valid statement: {file_path}")
+                    print(f"  [OK] Valid statement: {file_path}")
                 else:
-                    print(f"  ✗ Skipped (not a valid {bank_name.upper()} statement): {file_path}")
+                    print(f"  [X] Skipped (not a valid {bank_name.upper()} statement): {file_path}")
             
             except Exception as e:
-                print(f"  ✗ Skipped (error validating): {file_path} - {str(e)}")
+                print(f"  [X] Skipped (error validating): {file_path} - {str(e)}")
                 continue
     
     return matching_files
@@ -301,7 +330,7 @@ def main():
         print("No matching bank statement files were found.")
         sys.exit(1)
     else:
-        print(f"✓ Successfully processed {total_processed} file(s)")
+        print(f"[OK] Successfully processed {total_processed} file(s)")
 
 if __name__ == "__main__":
     main()
