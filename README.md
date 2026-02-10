@@ -9,7 +9,7 @@ A Python tool to extract and parse bank statement files from multiple Indonesian
 ## Supported Banks
 
 - **BCA** (Bank Central Asia) - PDF format
-- **Mandiri** (Bank Mandiri) - Excel format (.xlsx, .xls)
+- **Mandiri** (Bank Mandiri) - Excel (.xlsx, .xls) and PDF formats
 - **CIMB** (Bank CIMB Niaga) - PDF format
 
 ## Features
