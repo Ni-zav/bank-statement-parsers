@@ -192,7 +192,8 @@ class BCAPDFParser(BaseParser):
                             balance=balance,
                             reference_no=ref_no,
                             bank_name="BCA",
-                            account_owner=self.account_owner
+                            account_owner=self.account_owner,
+                            currency="IDR"
                         )
                         
                         # If balance from PDF is 0, calculate from running balance

@@ -140,7 +140,8 @@ class MandiriPDFParser(BaseParser):
                                     balance=balance,
                                     reference_no="",
                                     bank_name="Mandiri",
-                                    account_owner=self.account_owner
+                                    account_owner=self.account_owner,
+                                    currency="IDR"
                                 )
                                 transactions.append(tr)
                         else:

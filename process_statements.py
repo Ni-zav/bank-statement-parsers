@@ -3,6 +3,7 @@ import sys
 import traceback
 import argparse
 from pathlib import Path
+from datetime import datetime
 import pandas as pd
 # Import with underscore names (Python module names)
 import importlib
@@ -10,13 +11,14 @@ bca_pdf = importlib.import_module('bca-pdf')
 mandiri_xlsx = importlib.import_module('mandiri-xlsx')
 mandiri_pdf = importlib.import_module('mandiri-pdf')
 cimb_pdf = importlib.import_module('cimb-pdf')
+from config import OutputFormat, from_args
 
 BCAPDFParser = bca_pdf.BCAPDFParser
 MandiriXLSXParser = mandiri_xlsx.MandiriXLSXParser
 MandiriPDFParser = mandiri_pdf.MandiriPDFParser
 CIMBPDFParser = cimb_pdf.CIMBPDFParser
 
-def process_file(file_path: Path, output_dir: Path, password: str = None):
+def process_file(file_path: Path, output_dir: Path, password: str = None, output_format: OutputFormat = None):
     """
     Process a single bank statement file and export to CSV.
     
@@ -24,6 +26,7 @@ def process_file(file_path: Path, output_dir: Path, password: str = None):
         file_path: Path to the bank statement file
         output_dir: Directory to save the output CSV
         password: Optional password for protected Excel files
+        output_format: OutputFormat configuration for custom formatting
     """
     filename = file_path.name.lower()
     parser = None
@@ -81,9 +84,6 @@ def process_file(file_path: Path, output_dir: Path, password: str = None):
             # Use extracted name, or fallback to "Account Owner" if extraction failed
             owner_name = parser.account_owner if parser.account_owner != "Unknown" else "Account Owner"
             
-            # Sanitize owner name for filename (remove illegal chars)
-            owner_safe = "".join([c for c in owner_name if c.isalpha() or c.isspace() or c in ['.']]).strip()
-            
             bank_name = ""
             if isinstance(parser, BCAPDFParser):
                 bank_name = "BCA"
@@ -93,17 +93,29 @@ def process_file(file_path: Path, output_dir: Path, password: str = None):
                 bank_name = "CIMB"
             else:
                 bank_name = "Bank"
-             
-            start_str = min_date.strftime("%d%m%Y")
-            end_str = max_date.strftime("%d%m%Y")
             
-            output_filename = f"{bank_name}-[{owner_safe}]-{acct_num}-{start_str}-{end_str}.csv"
+            # Generate output filename
+            if output_format:
+                output_filename = output_format.format_filename(
+                    bank_name, owner_name, acct_num, min_date, max_date
+                )
+            else:
+                # Default format
+                owner_safe = "".join([c for c in owner_name if c.isalpha() or c.isspace() or c in ['.']]).strip()
+                start_str = min_date.strftime("%d%m%Y")
+                end_str = max_date.strftime("%d%m%Y")
+                output_filename = f"{bank_name}-[{owner_safe}]-{acct_num}-{start_str}-{end_str}.csv"
+            
             output_path = output_dir / output_filename
             
-            data = [t.to_dict() for t in transactions]
+            data = [t.to_dict(output_format) for t in transactions]
             df = pd.DataFrame(data)
             
-            cols = ["Date", "Description", "Reference No", "Debit", "Credit", "Balance", "Bank", "Owner"]
+            if output_format:
+                cols = output_format.get_column_names()
+            else:
+                cols = ["Date", "Description", "Reference No", "Debit", "Credit", "Balance", "Bank", "Owner"]
+            
             for c in cols:
                 if c not in df.columns:
                     df[c] = None
@@ -253,8 +265,19 @@ def find_bank_files(folder_path: Path, bank_name: str, password: str = None) -> 
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Process bank statement files and export to CSV format.",
-        epilog="Example: python process_statements.py /path/to/statements bca"
+        description="Process bank statement files and export to CSV format with customizable options.",
+        epilog="Examples:\n"
+               "  # Default format (dd/mm/yyyy)\n"
+               "  python process_statements.py /path/to/statements bca\n"
+               "  # Custom date format (must include month and year)\n"
+               "  python process_statements.py /path/to/statements mandiri --date-format mmyyyy --combine-debit-credit\n"
+               "  # Custom strftime format: YYYY-MM-DD\n"
+               "  python process_statements.py /path/to/statements cimb --date-format %%Y-%%m-%%d\n"
+               "  # Minimal output with custom currency\n"
+               "  python process_statements.py /path/to/statements all --no-balance --no-reference --currency USD\n"
+               "  # Custom filename with date range in ISO format\n"
+               "  python process_statements.py /path/to/statements all --date-format %%Y-%%m-%%d --filename-format {bank}_{account}_{start_date}_to_{end_date}.csv",
+        formatter_class=argparse.RawDescriptionHelpFormatter
     )
     
     parser.add_argument(
@@ -281,6 +304,70 @@ def main():
         default=None
     )
     
+    # Date format options
+    parser.add_argument(
+        '--date-format',
+        default='%d/%m/%Y',
+        help='Date format (must include month and year). '
+             'Presets: dd/mm/yyyy, ddmmyyyy, mmyyyy, mmmm, mm, yyyymmdd '
+             'Or use strftime format (e.g., %%d/%%m/%%Y, %%Y-%%m-%%d, %%b-%%Y). '
+             'Must contain month (%%m, %%B, %%b) and year (%%Y, %%y) components. '
+             '(default: %%d/%%m/%%Y)'
+    )
+    
+    # Debit/Credit handling
+    parser.add_argument(
+        '--combine-debit-credit',
+        action='store_true',
+        help='Combine Debit and Credit into single "Amount" column (debit=positive, credit=negative)'
+    )
+    
+    # Column visibility
+    parser.add_argument(
+        '--no-reference',
+        action='store_true',
+        help='Exclude "Reference No" column from output'
+    )
+    
+    parser.add_argument(
+        '--no-balance',
+        action='store_true',
+        help='Exclude "Balance" column from output'
+    )
+    
+    parser.add_argument(
+        '--no-bank',
+        action='store_true',
+        help='Exclude "Bank" column from output'
+    )
+    
+    parser.add_argument(
+        '--no-owner',
+        action='store_true',
+        help='Exclude "Owner" column from output'
+    )
+    
+    # Currency
+    parser.add_argument(
+        '--currency',
+        default='IDR',
+        help='Currency code (e.g., IDR, USD, EUR) (default: IDR)'
+    )
+    
+    parser.add_argument(
+        '--include-currency',
+        action='store_true',
+        help='Add "Currency" column to output'
+    )
+    
+    # Custom filename
+    parser.add_argument(
+        '--filename-format',
+        default=None,
+        help='Custom filename format. Available placeholders: {bank}, {owner}, {account}, {currency}, {start_date}, {end_date}\n'
+             'Example: "{bank}_{owner}_{start_date}.csv"'
+    )
+    
     args = parser.parse_args()
     
     # Validate folder path
@@ -302,6 +389,28 @@ def main():
     output_dir.mkdir(exist_ok=True, parents=True)
     print(f"Output directory: {output_dir}\n")
     
+    # Create output format from args
+    try:
+        output_format = from_args(args)
+    except ValueError as e:
+        print(f"\nError: {e}")
+        sys.exit(1)
+    
+    # Show a sample of the date format
+    sample_date = datetime(2025, 3, 15)
+    sample_formatted = output_format.format_date(sample_date)
+    
+    print("Output configuration:")
+    print(f"  Date format: {args.date_format} (example: {sample_formatted})")
+    print(f"  Combine debit/credit: {args.combine_debit_credit}")
+    print(f"  Include reference: {not args.no_reference}")
+    print(f"  Include balance: {not args.no_balance}")
+    print(f"  Include bank: {not args.no_bank}")
+    print(f"  Include owner: {not args.no_owner}")
+    print(f"  Currency: {args.currency}")
+    print(f"  Include currency column: {args.include_currency}")
+    print(f"  Filename format: {output_format.filename_format}\n")
+    
     # Find files
     bank_arg = args.bank.lower()
     
@@ -322,7 +431,7 @@ def main():
         print(f"Processing {len(files)} {bank.upper()} file(s)...\n")
         
         for file_path in files:
-            process_file(file_path, output_dir, password=args.password if bank == 'mandiri' else None)
+            process_file(file_path, output_dir, password=args.password if bank == 'mandiri' else None, output_format=output_format)
             total_processed += 1
             print()
     
