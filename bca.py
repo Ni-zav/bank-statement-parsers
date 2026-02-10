@@ -7,12 +7,24 @@ from base import BaseParser, Transaction
 class BCAParser(BaseParser):
     def parse(self) -> List[Transaction]:
         transactions = []
-        year = datetime.now().year 
+        year = datetime.now().year
+        running_balance = 0.0
+        opening_balance = 0.0
 
         with pdfplumber.open(self.file_path) as pdf:
             # Extract Year and Account Number from first page
             first_page_text = pdf.pages[0].extract_text()
             if first_page_text:
+                # Extract opening balance (SALDO AWAL)
+                saldo_match = re.search(r'SALDO\s+AWAL\s*:?\s*([\d,]+\.?\d*)', first_page_text, re.IGNORECASE)
+                if saldo_match:
+                    saldo_str = saldo_match.group(1).replace(',', '')
+                    try:
+                        opening_balance = float(saldo_str)
+                        running_balance = opening_balance
+                    except:
+                        opening_balance = 0.0
+                
                 # Year extraction
                 match = re.search(r'PERIODE\s*:\s*\w+\s+(\d{4})', first_page_text, re.IGNORECASE)
                 if match:
@@ -121,11 +133,25 @@ class BCAParser(BaseParser):
                             else:
                                 tx_type = "CREDIT"
                                 
-                            # If there is a second match, it's the Balance
+                            # If there is a second or more matches, the last one is likely the Balance
+                            # unless it also has DB/CR marker right after it
                             if len(matches) > 1:
+                                # Try the last match first
                                 bal_match = matches[-1]
-                                # Check if it's really the balance (at end of line usually)
-                                if bal_match.end() >= len(full_content) - 15:
+                                bal_end = bal_match.end()
+                                # Check if this last amount has DB/CR marker - if so, it's not the balance
+                                post_bal = full_content[bal_end:bal_end+5]
+                                
+                                if 'DB' not in post_bal and 'CR' not in post_bal:
+                                    # This is likely the balance
+                                    bal_val_str = bal_match.group(1).replace(',', '')
+                                    try:
+                                        balance = float(bal_val_str)
+                                    except:
+                                        balance = 0.0
+                                elif len(matches) > 2:
+                                    # If last match has a marker, try the second-to-last
+                                    bal_match = matches[-2]
                                     bal_val_str = bal_match.group(1).replace(',', '')
                                     try:
                                         balance = float(bal_val_str)
@@ -168,6 +194,19 @@ class BCAParser(BaseParser):
                             bank_name="BCA",
                             account_owner=self.account_owner
                         )
+                        
+                        # If balance from PDF is 0, calculate from running balance
+                        if balance == 0.0 and opening_balance > 0.0:
+                            if tx_type == "DEBIT":
+                                running_balance -= amount
+                            else:
+                                running_balance += amount
+                            tr.balance = running_balance
+                        else:
+                            # If PDF has balance, use it and update running balance
+                            if balance > 0.0:
+                                running_balance = balance
+                        
                         transactions.append(tr)
                         
                         continue # Processed this transaction
