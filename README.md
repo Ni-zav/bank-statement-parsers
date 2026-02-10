@@ -23,6 +23,12 @@ A Python tool to extract and parse bank statement files from multiple Indonesian
 - **Account Information**: Automatically extracts account owner name and account number
 - **Batch Processing**: Process all files of a specific bank or all banks at once
 - **Mixed File Handling**: Safely processes folders with random files (validates file content)
+- **Customizable Output Format**: Control date formats, column visibility, debit/credit handling, and more
+- **Flexible Date Formats**: Presets (ddmmyyyy, mmyyyy, mmmm) and custom strftime patterns
+- **Combined/Separate Debit-Credit**: Single amount column or separate debit/credit columns
+- **Optional Columns**: Include/exclude Reference No, Balance, Bank, and Owner columns
+- **Custom Currency Support**: Specify currency code and optionally add currency column
+- **Custom Filenames**: Define your own output filename format with smart placeholders
 
 ## Installation
 
@@ -93,6 +99,161 @@ python process_statements.py /path/to/statements mandiri -p YOUR_PASSWORD -o /pa
 
 Alternatively, place a `password.txt` file in the Mandiri statements folder with the password on the first line - it will be used automatically.
 
+## Customization Options
+
+### Date Format
+
+Control how dates appear in the CSV output and filenames. Must include both month and year components.
+
+**Using Presets:**
+```bash
+# ISO 8601 format via preset
+python process_statements.py input/statements all --date-format "yyyymmdd"
+
+# Month and Year only
+python process_statements.py input/statements all --date-format "mmyyyy"
+
+# Full month name
+python process_statements.py input/statements all --date-format "mmmm"
+```
+
+**Using Custom strftime Formats:**
+```bash
+# YYYY-MM-DD format
+python process_statements.py input/statements bca --date-format "%Y-%m-%d"
+
+# DD-Mon-YYYY format
+python process_statements.py input/statements bca --date-format "%d-%b-%Y"
+
+# Full date with month name
+python process_statements.py input/statements bca --date-format "%d %B %Y"
+
+# Month/Year only
+python process_statements.py input/statements bca --date-format "%m/%Y"
+```
+
+**Available Date Format Presets:**
+- `dd/mm/yyyy` → 15/03/2025
+- `ddmmyyyy` → 15032025
+- `mmyyyy` → 032025
+- `mmmm` → March
+- `mm` → Mar
+- `yyyymmdd` → 20250315
+
+**strftime Format Components:**
+- `%d` - Day (01-31)
+- `%m` - Month number (01-12)
+- `%B` - Full month name (January, February, ...)
+- `%b` - Short month name (Jan, Feb, ...)
+- `%Y` - Year 4-digit (2025)
+- `%y` - Year 2-digit (25)
+
+### Debit/Credit Handling
+
+Choose how transaction amounts are displayed:
+
+```bash
+# Separate Debit and Credit columns (default)
+python process_statements.py input/statements all
+
+# Combined Amount column: debit=positive, credit=negative
+python process_statements.py input/statements all --combine-debit-credit
+```
+
+### Column Visibility
+
+Include or exclude optional columns from the output:
+
+```bash
+# Exclude reference numbers
+python process_statements.py input/statements all --no-reference
+
+# Exclude balance column
+python process_statements.py input/statements all --no-balance
+
+# Exclude bank name column
+python process_statements.py input/statements all --no-bank
+
+# Exclude owner name column
+python process_statements.py input/statements all --no-owner
+
+# Minimal output: only Date, Description, Amount, Balance
+python process_statements.py input/statements all --combine-debit-credit --no-reference --no-bank --no-owner
+```
+
+### Currency
+
+Specify currency code and optionally add a currency column:
+
+```bash
+# Set currency to USD (default: IDR)
+python process_statements.py input/statements all --currency USD
+
+# Add currency column to output
+python process_statements.py input/statements all --currency EUR --include-currency
+
+# Combined options
+python process_statements.py input/statements all --currency SGD --include-currency --combine-debit-credit
+```
+
+### Custom Filenames
+
+Define custom output filename format using placeholders:
+
+```bash
+# Available placeholders:
+# {bank}, {owner}, {account}, {currency}, {start_date}, {end_date}
+
+# Example 1: Bank_Owner_DateRange format
+python process_statements.py input/statements all --filename-format "{bank}_{owner}_{start_date}_to_{end_date}.csv"
+
+# Example 2: Account number with date
+python process_statements.py input/statements all --filename-format "{account}_{currency}_{start_date}.csv"
+
+# Example 3: Simple date-based
+python process_statements.py input/statements all --date-format "%Y-%m-%d" --filename-format "{bank}_{start_date}.csv"
+```
+
+### Combined Examples
+
+```bash
+# Professional format: ISO dates, combined amount, include currency, minimal columns
+python process_statements.py input/statements all \
+  --date-format "%Y-%m-%d" \
+  --combine-debit-credit \
+  --include-currency \
+  --no-reference \
+  --no-bank \
+  --no-owner
+
+# Readable format: Day-Month-Year, separate debit/credit, all columns
+python process_statements.py input/statements all \
+  --date-format "%d-%b-%Y" \
+  --currency IDR \
+  --include-currency
+
+# Minimal format: Month-Year only, combined amount, no optional columns
+python process_statements.py input/statements all \
+  --date-format "%m/%Y" \
+  --combine-debit-credit \
+  --no-reference \
+  --no-balance \
+  --no-bank \
+  --no-owner \
+  --filename-format "{bank}_{account}_{start_date}.csv"
+
+# Custom output with specific date format for filenames
+python process_statements.py input/statements all \
+  --date-format "%Y-%m-%d" \
+  --combine-debit-credit \
+  --filename-format "{bank}-{owner}-{account}-{start_date}.csv" \
+  -o "output/formatted"
+```
+
+## Output Format
+
+The tool generates CSV files with columns based on your configuration. Here's an example with default settings:
+
 ## Input File Requirements
 
 ### Automatic File Detection
@@ -141,188 +302,209 @@ This prevents false positives and ensures only real bank statements are processe
 
 ## Output Format
 
-The tool generates CSV files with the following columns:
+The tool generates CSV files with columns based on your configuration. Here's an example with default settings:
 
-| Column | Description |
-|--------|-------------|
-| Date | Transaction date (YYYY-MM-DD) |
-| Description | Transaction details/memo |
-| Reference No | Transaction reference number |
-| Debit | Amount withdrawn (if applicable) |
-| Credit | Amount deposited (if applicable) |
-| Balance | Account balance after transaction |
-| Bank | Bank name (BCA, Mandiri, CIMB) |
-| Owner | Account owner name |
+| Column | Description | Customizable |
+|--------|-------------|--------------|
+| Date | Transaction date (default: YYYY-MM-DD) | ✓ Format with `--date-format` |
+| Description | Transaction details/memo | - |
+| Reference No | Transaction reference number | ✓ Exclude with `--no-reference` |
+| Debit | Amount withdrawn | ✓ Combine with Credit using `--combine-debit-credit` |
+| Credit | Amount deposited | ✓ Combine with Debit using `--combine-debit-credit` |
+| Amount | Combined debit/credit amount* | ✓ Enable with `--combine-debit-credit` |
+| Currency | Currency code (IDR, USD, etc.)* | ✓ Add with `--include-currency` |
+| Balance | Account balance after transaction | ✓ Exclude with `--no-balance` |
+| Bank | Bank name (BCA, Mandiri, CIMB) | ✓ Exclude with `--no-bank` |
+| Owner | Account owner name | ✓ Exclude with `--no-owner` |
+
+*Amount column appears only with `--combine-debit-credit` flag. Currency column appears only with `--include-currency` flag.
+
+### Default Output Example
+
+```csv
+Date,Description,Reference No,Debit,Credit,Balance,Bank,Owner
+2025-03-15,SWITCHING WITHDRAWAL DI 009 INDOMARET,XYZ123,250000.0,0,506470.99,BCA,NIGEL IHZA FIRDAUSY
+2025-03-15,TRANSFER CREDIT,ABC456,0,150000.0,756470.99,BCA,NIGEL IHZA FIRDAUSY
+```
+
+### Custom Output Example (with `--combine-debit-credit --include-currency --no-reference`)
+
+```csv
+Date,Description,Amount,Currency,Balance,Bank,Owner
+15-Mar-2025,SWITCHING WITHDRAWAL DI 009 INDOMARET,250000.0,IDR,506470.99,BCA,NIGEL IHZA FIRDAUSY
+15-Mar-2025,TRANSFER CREDIT,-150000.0,IDR,756470.99,BCA,NIGEL IHZA FIRDAUSY
+```
 
 ### Output Filename Format
 
+Default format:
 ```
 {BankName}-[{OwnerName}]-{AccountNumber}-{StartDate}-{EndDate}.csv
 ```
 
-Example:
+Example with default date format:
 ```
-BCA-[Account Owner]-0123456789-01122025-31122025.csv
+BCA-[NIGEL IHZA FIRDAUSY]-0374656844-01/03/2025-31/03/2025.csv
 ```
 
-## Examples
+Example with custom format (`--date-format "%Y-%m-%d"`):
+```
+BCA-[NIGEL IHZA FIRDAUSY]-0374656844-2025-03-01-2025-03-31.csv
+```
 
-### Example 1: Process BCA statements
+Example with custom filename (`--filename-format "{bank}_{account}_{start_date}.csv"`):
+```
+BCA_0374656844_2025-03-01.csv
+```
+
+## Practical Examples
+
+### Example 1: Basic Processing (Default Format)
+
+Process all BCA files with default settings:
 
 ```bash
 python process_statements.py "C:\Users\Documents\Statements" bca
 ```
 
-The tool automatically finds and processes files like:
-- `[ACCOUNT_NUMBER]_JUL_2025.pdf`
-- `[ACCOUNT_NUMBER]_AUG_2025.pdf`
-- Any files with "bca" in the name
+Output: CSV with standard format (dd/mm/yyyy, separate debit/credit, all columns)
 
-### Example 2: Process all banks with custom output
+### Example 2: Professional Format for Analysis
 
-```bash
-python process_statements.py "D:\Financial\2025" all -o "D:\Processed"
-```
-
-Automatically searches for and processes:
-- BCA files: `[ACCOUNT_NUMBER]_[MONTH]_[YEAR].pdf` or files with "bca"
-- Mandiri files: `e-Statement_*.xlsx` or files with "mandiri"
-- CIMB files: `CASA_Statement_*.pdf` or files with "cimb"
-
-Exports results to `D:\Processed\`
-
-### Example 3: Process Mandiri statements from nested folders
+ISO date format, combined amounts, minimal columns, include currency:
 
 ```bash
-python process_statements.py "D:\Financial\2025" mandiri
+python process_statements.py "D:\Financial\2025" all \
+  --date-format "%Y-%m-%d" \
+  --combine-debit-credit \
+  --include-currency \
+  --no-reference
 ```
 
-Recursively finds all Mandiri files:
-- `e-Statement_[ACCOUNT_NUMBER]_01 Apr 2024-30 Apr 2024.xlsx`
-- `e-Statement_*.xlsx` pattern
-- Files with "mandiri" in the name
+Output files: `BCA-[Owner]-account-2025-01-01-2025-01-31.csv`
 
-### Example 4: Process CIMB statements with custom output
+### Example 3: Human-Readable Format
+
+Full month names with day, readable date format:
 
 ```bash
-python process_statements.py "E:\Bank Statements\CIMB" cimb -o "E:\Processed"
+python process_statements.py input/statements mandiri \
+  --date-format "%d %B %Y" \
+  --currency IDR \
+  --include-currency \
+  -p "your-password" \
+  -o "output/monthly"
 ```
 
-Finds and processes files like:
-- `CASA_Statement_Nov2025_[TIMESTAMP].pdf`
-- `casa_*.pdf` pattern
-- Files with "cimb" in the name
+### Example 4: Minimal Monthly Summary
 
-## File Structure
+Month-Year only, combined amounts, exclude optional columns:
 
-```
-bank-statement-parsers/
-├── base.py                    # Base parser class and Transaction dataclass
-├── bca.py                     # BCA-specific parser
-├── mandiri.py                 # Mandiri-specific parser
-├── cimb.py                    # CIMB-specific parser
-├── process_statements.py      # Main script with CLI interface
-├── requirements.txt           # Python dependencies
-├── README.md                  # This file
-└── output/                    # Generated CSV files (created automatically)
-    ├── BCA-[Owner]-number-dates.csv
-    ├── Mandiri-[Owner]-number-dates.csv
-    └── CIMB-[Owner]-number-dates.csv
+```bash
+python process_statements.py input/statements all \
+  --date-format "%B %Y" \
+  --combine-debit-credit \
+  --no-reference \
+  --no-balance \
+  --no-bank \
+  --no-owner \
+  --currency EUR \
+  --include-currency
 ```
 
-## How It Works
+### Example 5: Custom Filename with Account and Date Range
 
-1. **File Discovery**: Searches the specified folder recursively for files matching bank patterns
-2. **Parser Selection**: Determines which parser to use based on filename and extension
-3. **Account Extraction**: Reads the statement to extract account owner and account number
-4. **Transaction Parsing**: Extracts each transaction with:
-   - Date
-   - Description
-   - Debit/Credit amounts
-   - Running balance
-   - Reference numbers
-5. **CSV Export**: Creates a standardized CSV file with all transactions
+Process with ISO format dates and custom filename:
 
-## Safety & File Filtering
-
-### Handling Mixed File Types
-
-The tool is safe to run on folders with lots of random files. It uses smart filtering:
-
-**3-Level Validation:**
-
-1. **Filename Filter** - Only considers files with bank name (bca, mandiri, cimb)
-2. **Extension Filter** - Only processes correct file types (.pdf for BCA/CIMB, .xlsx/.xls for Mandiri)
-3. **Content Validation** - Scans file content for bank-specific keywords before processing
-
-### What Gets Processed
-
-✓ PDF with "bca" in name + contains "mutasi rekening" = **PROCESSED**
-✓ Excel with "mandiri" in name + contains "bank mandiri" = **PROCESSED**
-
-### What Gets Skipped
-
-✗ `random_ebook.pdf` - No bank name in filename = **SKIPPED**
-✗ `bca_invoice.pdf` - Has "bca" but wrong content = **SKIPPED**
-✗ `mandiri.docx` - Wrong file extension = **SKIPPED**
-✗ `statement.xlsx` - No bank name = **SKIPPED**
-
-### Running on Large Folders
-
-Safe to run on folders with thousands of files. The tool will:
-- Print validation messages for each file it checks
-- Only process files that match all criteria
-- Skip non-matching files silently
-- Report which files are valid statements
-
-Example output:
-```
-Searching for BCA files in C:\My Documents\...
-  ✓ Valid statement: C:\My Documents\Statements\bca-2025-jan.pdf
-  ✗ Skipped (not a valid BCA statement): C:\My Documents\ebooks\bca-guide.pdf
-  ✗ Skipped (wrong extension): C:\My Documents\Mandiri\bca-statement.xlsx
-Processing 1 BCA file(s)...
+```bash
+python process_statements.py input/statements cimb \
+  --date-format "%Y-%m-%d" \
+  --combine-debit-credit \
+  --filename-format "{bank}_{account}_{start_date}_to_{end_date}.csv" \
+  -o "output/formatted"
 ```
 
-### Bank-Specific Keywords
+Output: `CIMB_1234567890_2025-03-01_to_2025-03-31.csv`
 
-The tool looks for the following keywords in file content to validate statements:
+### Example 6: Process Multiple Currencies
 
-**BCA Keywords:**
-- "bca"
-- "bank central"
-- "mutasi rekening"
-- "saldo"
-- "rekening"
+If processing statements from different banks/currencies:
 
-**Mandiri Keywords:**
-- "mandiri"
-- "bank mandiri"
-- "laporan transaksi"
-- "tanggal"
-- "uraian"
+```bash
+# BCA statements (IDR)
+python process_statements.py input/statements/bca bca \
+  --currency IDR \
+  --include-currency
 
-**CIMB Keywords:**
-- "cimb"
-- "casa"
-- "bank cimb"
-- "mutasi rekening"
+# CIMB statements (SGD)
+python process_statements.py input/statements/cimb cimb \
+  --currency SGD \
+  --include-currency
 
-### Examples of Files That Will Be Processed
+# Or all together with specified currency
+python process_statements.py input/statements all \
+  --currency IDR \
+  --include-currency
+```
 
-✓ `[ACCOUNT_NUMBER]_JUL_2025.pdf` - BCA default name (account number + month + year)
-✓ `e-Statement_[ACCOUNT_NUMBER]_01 Apr 2024-30 Apr 2024.xlsx` - Mandiri default name
-✓ `CASA_Statement_Nov2025_[TIMESTAMP].pdf` - CIMB default name
-✓ `bca-statement-2025.pdf` - Custom BCA name
-✓ `mandiri-january-2025.xlsx` - Custom Mandiri name
+### Example 7: Excel-Friendly Format
 
-### Examples of Files That Will Be Skipped
+Readable dates, separate debit/credit (for pivot tables), simple custom filename:
 
-✗ `statement_2025.pdf` - No bank identifier
-✗ `bca_invoice.pdf` - Has bank name but wrong content
-✗ `mandiri_notes.pdf` - Wrong extension (.pdf instead of .xlsx)
-✗ `CASA_document.docx` - Wrong extension (.docx instead of .pdf)
-✗ `random_file.xlsx` - No bank identifier in name
+```bash
+python process_statements.py input/statements all \
+  --date-format "%d/%m/%Y" \
+  --no-reference \
+  --currency IDR \
+  --filename-format "{bank}_{account}_{start_date}.csv" \
+  -o "output/excel-import"
+```
+
+## Input File Requirements
+
+### Automatic File Detection
+
+The tool **automatically detects and parses** bank statements using the default download filenames generated by each bank. Just point it to a folder and it will identify and process the correct files.
+
+**Supported Default Filenames:**
+
+**BCA:**
+```
+[AccountNumber]_[MONTH]_[YEAR].pdf
+Example: [ACCOUNT_NUMBER]_JUL_2025.pdf
+```
+
+**Mandiri:**
+```
+e-Statement_[AccountNumber]_[StartDate]-[EndDate].xlsx
+Example: e-Statement_[ACCOUNT_NUMBER]_01 Apr 2024-30 Apr 2024.xlsx
+```
+
+**CIMB:**
+```
+CASA_Statement_[Date][Timestamp].pdf
+Example: CASA_Statement_Nov2025_[TIMESTAMP].pdf
+```
+
+### Custom Naming
+
+You can also rename files with the bank name or keywords. The tool will recognize:
+
+| Bank | Accepted Patterns |
+|------|-------------------|
+| BCA | Filename contains "bca" or month names (JUL, AGUST, SEPT, OKT, NOV, DES, JAN, FEB, MAR, APR, MEI, JUN) |
+| Mandiri | Filename contains "mandiri" or starts with "e-statement" |
+| CIMB | Filename contains "cimb" or "casa" |
+
+### File Filtering
+
+The tool uses a **3-step validation process** to ensure accuracy:
+
+1. **Filename Pattern Check**: File must match bank's naming pattern
+2. **Extension Check**: File must have the correct format (pdf for BCA/CIMB, xlsx/xls for Mandiri)
+3. **Content Validation**: First page/rows scanned for bank-specific keywords
+
+This prevents false positives and ensures only real bank statements are processed.
 
 ## Data Privacy & Security
 
