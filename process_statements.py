@@ -185,6 +185,10 @@ def find_bank_files(folder_path: Path, bank_name: str, password: str = None) -> 
                             content_lower = first_page.lower() if first_page else ""
                             # Check if any keyword is found in first page
                             is_valid = any(kw in content_lower for kw in keywords)
+                            
+                            # For CASA files, trust the filename pattern even if keywords not found
+                            if bank_name == 'cimb' and 'casa' in file_lower and not is_valid:
+                                is_valid = True
                     except Exception as e:
                         print(f"  Warning: Could not read PDF {file_path} - {type(e).__name__}")
                         continue
