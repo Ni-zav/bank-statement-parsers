@@ -9,14 +9,38 @@ import warnings
 warnings.filterwarnings("ignore")
 
 class MandiriParser(BaseParser):
+    def __init__(self, file_path: str, account_owner: str, password: str = None):
+        super().__init__(file_path, account_owner)
+        self.password = password
+    
     def parse(self) -> List[Transaction]:
         transactions = []
         
         try:
-            # Read excel file
-            # Use 'sheet_name=0' to get first sheet
-            # Use 'header=None' to manually find header
-            df = pd.read_excel(self.file_path, sheet_name=0, header=None)
+            # Handle password-protected Excel files
+            if self.password:
+                import io
+                import msoffcrypto
+                
+                try:
+                    # Decrypt the file to memory
+                    with open(self.file_path, 'rb') as encrypted_file:
+                        office_file = msoffcrypto.OfficeFile(encrypted_file)
+                        office_file.load_key(password=self.password)
+                        
+                        decrypted = io.BytesIO()
+                        office_file.decrypt(decrypted)
+                        decrypted.seek(0)
+                        
+                        # Read the decrypted content
+                        df = pd.read_excel(decrypted, sheet_name=0, header=None)
+                except Exception as e:
+                    print(f"Error decrypting {self.file_path}: {e}")
+                    print("  Trying without password...")
+                    df = pd.read_excel(self.file_path, sheet_name=0, header=None)
+            else:
+                # Read the Excel file without password
+                df = pd.read_excel(self.file_path, sheet_name=0, header=None)
             
             # Find header row
             header_row_idx = None

@@ -8,13 +8,14 @@ from bca import BCAParser
 from mandiri import MandiriParser
 from cimb import CIMBParser
 
-def process_file(file_path: Path, output_dir: Path):
+def process_file(file_path: Path, output_dir: Path, password: str = None):
     """
     Process a single bank statement file and export to CSV.
     
     Args:
         file_path: Path to the bank statement file
         output_dir: Directory to save the output CSV
+        password: Optional password for protected Excel files
     """
     filename = file_path.name.lower()
     parser = None
@@ -22,25 +23,28 @@ def process_file(file_path: Path, output_dir: Path):
     
     print(f"Inspecting {filename}...")
 
-    # Simple heuristic for parser selection
-    if 'bca' in filename and filename.endswith('.pdf'):
-        account_owner = "Unknown"
-        parser = BCAParser(str(file_path), account_owner)
-        print(f"Selected BCAParser for {filename}")
-    elif 'mandiri' in filename:
-        if filename.endswith('.xlsx') or filename.endswith('.xls'):
-            account_owner = "Unknown"
-            parser = MandiriParser(str(file_path), account_owner)
+    # Enhanced parser selection using same logic as file finding
+    if filename.endswith('.pdf'):
+        # Check for BCA (account number pattern or 'bca' keyword or month patterns)
+        is_bca = 'bca' in filename or any(month in filename for month in ['_jul_', '_agust_', '_sept_', '_okt_', '_nov_', '_des_', '_jan_', '_feb_', '_mar_', '_apr_', '_mei_', '_jun_'])
+        # Check for CIMB (CASA or cimb keyword)
+        is_cimb = 'cimb' in filename or 'casa' in filename
+        
+        if is_bca and not is_cimb:
+            parser = BCAParser(str(file_path), account_owner)
+            print(f"Selected BCAParser for {filename}")
+        elif is_cimb:
+            parser = CIMBParser(str(file_path), account_owner)
+            print(f"Selected CIMBParser for {filename}")
+    elif filename.endswith('.xlsx') or filename.endswith('.xls'):
+        # Check for Mandiri (e-statement or mandiri keyword)
+        if 'e-statement' in filename or 'mandiri' in filename:
+            parser = MandiriParser(str(file_path), account_owner, password=password)
             print(f"Selected MandiriParser for {filename}")
-    elif 'cimb' in filename and filename.endswith('.pdf'):
-        account_owner = "Unknown"
-        parser = CIMBParser(str(file_path), account_owner)
-        print(f"Selected CIMBParser for {filename}")
-    else:
+    
+    if not parser:
         print(f"No parser found for {filename}")
         return
-
-    # Execute Parsing
     if parser:
         print(f"Processing {filename}...")
         try:
@@ -99,7 +103,7 @@ def process_file(file_path: Path, output_dir: Path):
             print(f"Error processing {filename}:")
             traceback.print_exc()
 
-def find_bank_files(folder_path: Path, bank_name: str) -> list:
+def find_bank_files(folder_path: Path, bank_name: str, password: str = None) -> list:
     """
     Recursively find all bank statement files matching the specified bank.
     
@@ -116,6 +120,7 @@ def find_bank_files(folder_path: Path, bank_name: str) -> list:
     Args:
         folder_path: Root folder to search
         bank_name: Bank name ('bca', 'mandiri', or 'cimb')
+        password: Optional password for Mandiri files
     
     Returns:
         List of file paths matching the bank criteria
@@ -197,8 +202,9 @@ def find_bank_files(folder_path: Path, bank_name: str) -> list:
                         is_valid = any(kw in content for kw in keywords)
                         wb.close()
                     except Exception as e:
-                        print(f"  Warning: Could not read Excel {file_path} - {type(e).__name__}")
-                        continue
+                        # If file fails to open (likely password-protected), trust filename pattern matching
+                        # The actual parser will handle the password
+                        is_valid = True  # Accept based on filename pattern matching
                 
                 if is_valid:
                     matching_files.append(file_path)
@@ -236,6 +242,12 @@ def main():
         default=None
     )
     
+    parser.add_argument(
+        '-p', '--password',
+        help='Password for protected Excel files (Mandiri)',
+        default=None
+    )
+    
     args = parser.parse_args()
     
     # Validate folder path
@@ -267,7 +279,8 @@ def main():
     
     total_processed = 0
     for bank in banks:
-        files = find_bank_files(source_dir, bank)
+        # Pass password for Mandiri files
+        files = find_bank_files(source_dir, bank, password=args.password if bank == 'mandiri' else None)
         
         if not files:
             print(f"No {bank.upper()} files found.\n")
@@ -276,7 +289,7 @@ def main():
         print(f"Processing {len(files)} {bank.upper()} file(s)...\n")
         
         for file_path in files:
-            process_file(file_path, output_dir)
+            process_file(file_path, output_dir, password=args.password if bank == 'mandiri' else None)
             total_processed += 1
             print()
     
