@@ -49,6 +49,50 @@ A Python tool to extract and parse bank statement files from multiple Indonesian
 pip install -r requirements.txt
 ```
 
+## Web App
+
+The repository also includes a browser-based app in [web/package.json](c:\Users\USER\Documents\0-Code\personal\bank-statement-parsers\web\package.json). That app parses supported statements entirely in the browser and does not upload files to a backend.
+
+### Privacy Model
+
+- Uploaded statement files are processed client-side in the browser.
+- The new local history feature is optional and stores parsed transaction data on the user's device only.
+- Raw uploaded files are not persisted by the web app.
+- Users can disable history or clear all saved history at any time.
+
+### Cloudflare Deployment
+
+The web app is deployable to Cloudflare as a static site.
+
+#### Recommended
+
+Deploy [web](c:\Users\USER\Documents\0-Code\personal\bank-statement-parsers\web) to Cloudflare Pages or Cloudflare Workers Static Assets.
+
+```bash
+cd web
+npm install
+npm run build
+npx wrangler pages deploy dist
+```
+
+If you prefer Workers Static Assets, a starter config is included in [web/wrangler.jsonc](c:\Users\USER\Documents\0-Code\personal\bank-statement-parsers\web\wrangler.jsonc):
+
+```bash
+cd web
+npm install
+npm run deploy:worker
+```
+
+### Python Backend Constraint
+
+The current Python parser stack depends on libraries such as `pandas`, `pdfplumber`, and `openpyxl`. That stack is not a practical fit for Cloudflare Workers in its current form, so the Python backend should be treated as local-only unless it is rewritten for a supported runtime.
+
+Practical options are:
+
+- keep the Python parser as a local CLI or packaged desktop-side helper
+- use the browser app as the deployed cloud interface, since it already processes files locally in the user's browser
+- later port missing parser logic to TypeScript if you want a fully browser-native product
+
 ## Usage
 
 ### Basic Usage
